@@ -19,5 +19,12 @@
         "score": 2,
         "total": 5,
         "date": "2025-09-24 14:17:03"
+    },
+    {
+        "joueur": "Anonyme",
+        "theme": "rock",
+        "score": 0,
+        "total": 5,
+        "date": "2025-10-16 10:30:45"
     }
 ]
