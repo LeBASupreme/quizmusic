@@ -20,6 +20,7 @@ require_once 'classes/QuestionTexte.php';
 require_once 'classes/QuestionImage.php';
 require_once 'classes/QuestionAudio.php';
 require_once 'classes/Quiz.php';
+require_once 'classes/Badge.php';
 
 $theme = $_GET['theme'] ?? '';
 
@@ -35,6 +36,9 @@ try {
     // - Charge 5 questions aléatoires
     // - Instancie les bons objets (QuestionTexte, Image ou Audio)
     $quiz = new Quiz($theme);
+    $badgeSystem = new Badge();
+    $badgeSystem->verifierBadges($_SESSION['user_id']);
+
 
     // 📚 Traitement du formulaire
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {

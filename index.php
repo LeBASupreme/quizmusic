@@ -37,6 +37,20 @@ $stmt = $pdo->query("
 ");
 $questionnaires = $stmt->fetchAll();
 
+
+
+$stmtCount = $pdo->query("
+    SELECT questionnaire_id, COUNT(*) AS nb_questions
+    FROM questions
+    GROUP BY questionnaire_id
+");
+
+$nbQuestionsParQuiz = [];
+foreach ($stmtCount->fetchAll() as $row) {
+    $nbQuestionsParQuiz[$row['questionnaire_id']] = $row['nb_questions'];
+}
+
+
 // 📚 CONCEPT : Fonction pour afficher la difficulté
 function afficherDifficulte($niveau) {
     $etoiles = '';
@@ -48,6 +62,9 @@ function afficherDifficulte($niveau) {
         }
     }
     return $etoiles;
+
+
+
 }
 ?>
 
@@ -128,7 +145,7 @@ function afficherDifficulte($niveau) {
             <?php
             // 📚 CONCEPT : Boucle sur les données de la BDD
             // Au lieu d'un tableau PHP, on parcourt les résultats SQL
-            foreach ($questionnaires as $quiz):
+                foreach ($questionnaires as $quiz):
             ?>
             <div class="bg-white rounded-2xl shadow-xl overflow-hidden transform hover:scale-105 transition-all duration-300 hover:shadow-2xl">
 
@@ -138,13 +155,18 @@ function afficherDifficulte($niveau) {
                         <span class="text-4xl"><?php echo $quiz['emoji']; ?></span>
                         <!-- 📚 NOTE : On pourrait afficher le nombre de questions depuis la BDD -->
                         <span class="text-sm font-medium bg-white/20 px-2 py-1 rounded-full">
-                            5 questions
+                            <?php
+                                echo isset($nbQuestionsParQuiz[$quiz['id']]) 
+                                ? $nbQuestionsParQuiz[$quiz['id']] . ' questions'
+                                : '0 question';
+                            ?>
                         </span>
                     </div>
                     <h3 class="text-2xl font-bold mb-2"><?php echo htmlspecialchars($quiz['titre']); ?></h3>
                     <div class="text-sm opacity-90">
                         Difficulté : <?php echo afficherDifficulte($quiz['difficulte']); ?>
                     </div>
+
                 </div>
 
                 <!-- Contenu de la card -->
