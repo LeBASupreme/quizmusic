@@ -53,7 +53,7 @@ class Badge {
     }
 
     private function badgeMarathon($userId) {
-        $sql = "SELECT COUNT(*) FROM scores WHERE user_id = ? AND DATE(date_jouee) = CURDATE()";
+        $sql = "SELECT COUNT(*) FROM scores WHERE user_id = ? AND DATE(date_jeu) = CURDATE()";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$userId]);
         $count = $stmt->fetchColumn();

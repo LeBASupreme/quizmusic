@@ -1,243 +1,154 @@
 <?php
-/**
- * Classe Quiz
- * Gère le chargement et la logique d'un quiz
- *
- * 📚 RESPONSABILITÉS DE CETTE CLASSE :
- * - Charger les informations d'un thème depuis la BDD
- * - Charger 5 questions aléatoires du thème
- * - Calculer le score d'un joueur
- * - Sauvegarder le score en BDD
- */
-
 class Quiz {
-    // 📚 CONCEPT : Propriétés privées encapsulées
-    private array $questions = [];      // Tableau d'objets Question (polymorphes)
-    private string $themeCode;          // Code du thème ('rock', 'pop_fr'...)
-    private array $themeInfo;           // Informations du questionnaire (titre, emoji, etc.)
+    private array $questions = [];
+    private string $themeCode;
+    private array $themeInfo;
 
-    /**
-     * Constructeur - Initialise le quiz pour un thème donné
-     *
-     * @param string $themeCode Code du questionnaire (ex: 'rock')
-     * @throws Exception Si le thème n'existe pas ou est inactif
-     */
-    public function __construct(string $themeCode) {
+    public function __construct(string $themeCode, ?array $questionIds = null) {
         $this->themeCode = $themeCode;
-
-        // 📚 CONCEPT : Initialisation en deux étapes
-        // 1. Charger les infos du thème
-        // 2. Charger les questions du thème
-        // Si l'étape 1 échoue, on ne fait pas l'étape 2
         $this->chargerTheme();
-        $this->chargerQuestionsAleatoires();
-    }
-
-    /**
-     * Charge les informations du thème depuis la BDD
-     *
-     * 📚 CONCEPT : Méthode privée (private)
-     * Cette méthode est utilisée uniquement en interne
-     * Elle ne doit pas être appelée depuis l'extérieur de la classe
-     *
-     * @throws Exception Si le questionnaire n'existe pas
-     */
-    private function chargerTheme(): void {
-        // 📚 Récupération de la connexion PDO
-        $pdo = Database::getConnexion();
-
-        // 📚 CONCEPT : Requête préparée pour la SÉCURITÉ
-        // prepare() crée une requête avec des paramètres
-        // ? sera remplacé par la valeur qu'on fournit dans execute()
-        // AVANTAGES :
-        // - Protection contre les injections SQL
-        // - MySQL peut optimiser et réutiliser la requête
-        $stmt = $pdo->prepare("
-            SELECT *
-            FROM questionnaires
-            WHERE code = ? AND actif = 1
-        ");
-
-        // 📚 CONCEPT : Exécution avec paramètres
-        // On passe les valeurs dans un tableau
-        // PDO échappe automatiquement les caractères dangereux
-        $stmt->execute([$this->themeCode]);
-
-        // 📚 CONCEPT : fetch() récupère UNE ligne
-        // Retourne un tableau associatif ou false si aucun résultat
-        $this->themeInfo = $stmt->fetch();
-
-        // 📚 CONCEPT : Validation et gestion d'erreurs
-        // Si le thème n'existe pas ou est désactivé, on lance une exception
-        if (!$this->themeInfo) {
-            throw new Exception("❌ Questionnaire introuvable ou désactivé : " . htmlspecialchars($this->themeCode));
+        if (!empty($questionIds)) {
+            $this->chargerQuestionsParIds($questionIds);
+        } else {
+            $this->chargerQuestionsAleatoires();
         }
     }
 
-    /**
-     * Charge 5 questions aléatoires du thème
-     *
-     * 📚 CONCEPT : Randomisation avec ORDER BY RAND()
-     * RAND() génère un nombre aléatoire pour chaque ligne
-     * ORDER BY RAND() trie les lignes dans un ordre aléatoire
-     * LIMIT 5 ne prend que les 5 premières
-     *
-     * RÉSULTAT : 5 questions différentes à chaque partie !
-     */
+    private function chargerTheme(): void {
+        $pdo = Database::getConnexion();
+        $stmt = $pdo->prepare("SELECT * FROM questionnaires WHERE code = ? AND actif = 1");
+        $stmt->execute([$this->themeCode]);
+        $this->themeInfo = $stmt->fetch();
+        if (!$this->themeInfo) {
+            throw new Exception("❌ Questionnaire introuvable : " . htmlspecialchars($this->themeCode));
+        }
+    }
+
+    private function normaliserBonneReponse($raw): int {
+        $val = strtoupper(trim((string)$raw));
+        if (is_numeric($val)) return (int)$val;
+        $map = ['A'=>0,'B'=>1,'C'=>2,'D'=>3];
+        return $map[$val] ?? 0;
+    }
+
+    private function instancierQuestion(array $ligne): void {
+        $reponses = [
+            $ligne['reponse_a'],
+            $ligne['reponse_b'],
+            $ligne['reponse_c'],
+            $ligne['reponse_d']
+        ];
+        $bonne = $this->normaliserBonneReponse($ligne['bonne_reponse']);
+
+        switch ($ligne['type_question']) {
+            case 'image':
+                $q = new QuestionImage(
+                    (int)$ligne['id'], $ligne['question'],
+                    $reponses, $bonne, $ligne['media_url'],
+                    $ligne['explication']
+                );
+                break;
+            case 'audio':
+                $q = new QuestionAudio(
+                    (int)$ligne['id'], $ligne['question'],
+                    $reponses, $bonne, $ligne['media_url'],
+                    $ligne['explication']
+                );
+                break;
+            default:
+                $q = new QuestionTexte(
+                    (int)$ligne['id'], $ligne['question'],
+                    $reponses, $bonne,
+                    $ligne['explication']
+                );
+        }
+        $this->questions[] = $q;
+    }
+
     private function chargerQuestionsAleatoires(): void {
         $pdo = Database::getConnexion();
-
-        // 📚 SQL avec ORDER BY RAND() pour l'aléatoire
-        $sql = "
-            SELECT *
-            FROM questions
+        $stmt = $pdo->prepare("
+            SELECT * FROM questions
             WHERE questionnaire_id = ?
             ORDER BY RAND()
             LIMIT 5
-        ";
-
-        $stmt = $pdo->prepare($sql);
+        ");
         $stmt->execute([$this->themeInfo['id']]);
-
-        // 📚 CONCEPT : fetchAll() récupère TOUTES les lignes
-        // Retourne un tableau de tableaux associatifs
-        $lignes = $stmt->fetchAll();
-
-        // 📚 CONCEPT POO : Factory Pattern
-        // On crée différents types d'objets selon les données
-        // C'est comme une "usine" qui fabrique le bon produit selon la commande
-
-        foreach ($lignes as $ligne) {
-            // Préparation du tableau des réponses
-            $reponses = [
-                $ligne['reponse_a'],
-                $ligne['reponse_b'],
-                $ligne['reponse_c'],
-                $ligne['reponse_d']
-            ];
-
-            // 📚 CONCEPT : POLYMORPHISME - Instanciation selon le type
-            // On crée le bon type d'objet selon le champ 'type_question'
-            // Tous ces objets sont des Question, mais avec des comportements différents
-
-            switch ($ligne['type_question']) {
-                case 'image':
-                    // 📚 Question avec image
-                    $question = new QuestionImage(
-                        $ligne['id'],
-                        $ligne['question'],
-                        $reponses,
-                        $ligne['bonne_reponse'],
-                        $ligne['media_url'],      // Chemin de l'image
-                        $ligne['explication']
-                    );
-                    break;
-
-                case 'audio':
-                    // 📚 Question avec audio
-                    $question = new QuestionAudio(
-                        $ligne['id'],
-                        $ligne['question'],
-                        $reponses,
-                        $ligne['bonne_reponse'],
-                        $ligne['media_url'],      // Chemin du fichier audio
-                        $ligne['explication']
-                    );
-                    break;
-
-                default:  // 'texte'
-                    // 📚 Question texte classique
-                    $question = new QuestionTexte(
-                        $ligne['id'],
-                        $ligne['question'],
-                        $reponses,
-                        $ligne['bonne_reponse'],
-                        $ligne['explication']
-                    );
-            }
-
-            // 📚 Ajout de l'objet Question au tableau
-            // Peu importe son type, c'est toujours une Question
-            $this->questions[] = $question;
+        foreach ($stmt->fetchAll() as $ligne) {
+            $this->instancierQuestion($ligne);
         }
     }
 
-    /**
-     * Calcule le score en comparant les réponses
-     *
-     * 📚 CONCEPT : Logique métier encapsulée
-     * La vérification des réponses est centralisée ici
-     *
-     * @param array $reponsesUtilisateur Tableau des réponses (index => choix)
-     * @return int Le score (nombre de bonnes réponses)
-     */
+    // ➕ NOUVELLE : charger exactement les mêmes questions, dans le même ordre
+    private function chargerQuestionsParIds(array $ids): void {
+        $pdo = Database::getConnexion();
+        if (empty($ids)) return;
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("
+            SELECT * FROM questions
+            WHERE questionnaire_id = ? AND id IN ($placeholders)
+        ");
+        $params = array_merge([$this->themeInfo['id']], $ids);
+        $stmt->execute($params);
+
+        $byId = [];
+        foreach ($stmt->fetchAll() as $l) $byId[(int)$l['id']] = $l;
+
+        foreach ($ids as $qid) {
+            if (!isset($byId[$qid])) continue;
+            $this->instancierQuestion($byId[$qid]);
+        }
+    }
+
+    // Score simple
     public function calculerScore(array $reponsesUtilisateur): int {
         $score = 0;
-
-        // 📚 Parcours de chaque question
         foreach ($this->questions as $index => $question) {
-            // Récupération de la réponse pour cette question
-            // ?? -1 signifie "si la réponse n'existe pas, prendre -1"
-            // -1 est une valeur impossible (les réponses vont de 0 à 3)
-            $reponseUser = (int)($reponsesUtilisateur[$index] ?? -1);
-
-            // 📚 CONCEPT : Polymorphisme en action
-            // On appelle estCorrect() sans savoir si c'est une QuestionTexte, Image ou Audio
-            // Chaque objet utilise la méthode héritée de Question
-            if ($question->estCorrect($reponseUser)) {
-                $score++;  // Bonne réponse : on incrémente
-            }
+            $user = isset($reponsesUtilisateur[$index]) ? (int)$reponsesUtilisateur[$index] : -1;
+            if ($question->estCorrect($user)) $score++;
         }
-
         return $score;
     }
 
-    /**
-     * Sauvegarde le score dans la BDD
-     *
-     * 📚 CONCEPT : Persistance des données
-     * On enregistre le résultat pour l'historique
-     *
-     * @param int $userId ID de l'utilisateur
-     * @param int $score Score obtenu
-     * @param int|null $tempsSecondes Temps mis pour répondre (optionnel)
-     */
+    // ➕ NOUVELLE : correction détaillée pour debug & affichage
+    public function corriger(array $reponsesUtilisateur): array {
+        $details = [];
+        $score = 0;
+        $letters = ['A','B','C','D'];
+
+        foreach ($this->questions as $index => $question) {
+            $userIdx = isset($reponsesUtilisateur[$index]) ? (int)$reponsesUtilisateur[$index] : -1;
+            $ok = $question->estCorrect($userIdx);
+            if ($ok) $score++;
+
+            $repText = $question->getReponses();
+            $details[] = [
+                'index' => $index,
+                'question_id' => $question->getId(),
+                'type' => $question->getType(),
+                'question' => $question->getTexteQuestion(),
+                'user_index' => $userIdx,
+                'user_letter' => $letters[$userIdx] ?? '?',
+                'user_text' => $repText[$userIdx] ?? null,
+                'good_index' => $question->getBonneReponse(),
+                'good_letter' => $letters[$question->getBonneReponse()] ?? '?',
+                'good_text' => $repText[$question->getBonneReponse()] ?? null,
+                'is_correct' => $ok,
+            ];
+        }
+
+        return ['score' => $score, 'total' => count($this->questions), 'details' => $details];
+    }
+
     public function sauvegarderScore(int $userId, int $score, ?int $tempsSecondes = null): void {
         $pdo = Database::getConnexion();
-
-        // 📚 CONCEPT : Requête INSERT préparée
-        $sql = "
+        $stmt = $pdo->prepare("
             INSERT INTO scores (user_id, questionnaire_id, score, total_questions, temps_seconde)
             VALUES (?, ?, ?, ?, ?)
-        ";
-
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            $userId,
-            $this->themeInfo['id'],
-            $score,
-            count($this->questions),  // Nombre de questions (normalement 5)
-            $tempsSecondes
-        ]);
+        ");
+        $stmt->execute([$userId, $this->themeInfo['id'], $score, count($this->questions), $tempsSecondes]);
     }
 
-    // ====== GETTERS ======
-
-    /**
-     * Retourne le tableau des questions chargées
-     *
-     * @return array Tableau d'objets Question (polymorphes)
-     */
-    public function getQuestions(): array {
-        return $this->questions;
-    }
-
-    /**
-     * Retourne les informations du thème
-     *
-     * @return array Tableau associatif (titre, emoji, couleur, etc.)
-     */
-    public function getThemeInfo(): array {
-        return $this->themeInfo;
-    }
+    public function getQuestions(): array { return $this->questions; }
+    public function getThemeInfo(): array { return $this->themeInfo; }
 }

@@ -102,12 +102,11 @@ abstract class Question {
      * @return bool true si correct, false sinon
      */
     public function estCorrect(int $reponseUtilisateur): bool {
-        // 📚 CONCEPT : Comparaison stricte ===
-        // === compare valeur ET type (plus sûr que ==)
-        // 0 === 0 → true
-        // 0 === "0" → false (car types différents)
         return $reponseUtilisateur === $this->bonneReponse;
     }
+
+
+
 
     /**
      * Génère le code HTML pour afficher la question

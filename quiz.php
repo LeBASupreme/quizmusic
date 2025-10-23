@@ -1,19 +1,18 @@
 <?php
 /**
- * Page de quiz refactorisée avec POO
+ * Page Quiz – version refactorisée orientée objet
  * Utilise les classes Quiz, Question et leurs dérivées
  */
 
 session_start();
 
-// 📚 Vérification de connexion
-// Si l'utilisateur n'est pas connecté, on le redirige vers login
+// 🔒 Vérification de connexion
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
 }
 
-// 📚 Chargement de toutes les classes nécessaires
+// 📦 Chargement des classes
 require_once 'classes/Database.php';
 require_once 'classes/Question.php';
 require_once 'classes/QuestionTexte.php';
@@ -22,53 +21,59 @@ require_once 'classes/QuestionAudio.php';
 require_once 'classes/Quiz.php';
 require_once 'classes/Badge.php';
 
+// 📚 Récupération du thème
 $theme = $_GET['theme'] ?? '';
-
 if (empty($theme)) {
     header('Location: index.php');
     exit;
 }
 
 try {
-    // 📚 CONCEPT POO : Instanciation du quiz
-    // En une seule ligne, on :
-    // - Charge les infos du thème
-    // - Charge 5 questions aléatoires
-    // - Instancie les bons objets (QuestionTexte, Image ou Audio)
-    $quiz = new Quiz($theme);
     $badgeSystem = new Badge();
-    $badgeSystem->verifierBadges($_SESSION['user_id']);
 
-
-    // 📚 Traitement du formulaire
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reponsesUtilisateur = $_POST['reponses'] ?? [];
-        $tempsTotal = $_POST['temps_total'] ?? null;
+        $tempsTotal = isset($_POST['temps_total']) ? (int)$_POST['temps_total'] : null;
 
-        // 📚 CONCEPT POO : Appel de méthode
-        // Le calcul du score est encapsulé dans la classe Quiz
-        $score = $quiz->calculerScore($reponsesUtilisateur);
+        // 1) récupérer les mêmes IDs
+        $idsCsv = trim($_POST['question_ids'] ?? '');
+        $ids = $idsCsv !== '' ? array_map('intval', explode(',', $idsCsv)) : [];
 
-        // 📚 Sauvegarde en BDD
+        // 2) reconstruire le quiz AVEC ces IDs (pas d'aléatoire ici)
+        $quiz = new Quiz($theme, $ids);
+
+        // 3) correction + debug
+        $resultat = $quiz->corriger($reponsesUtilisateur);
+        $score = $resultat['score'];
+
+        // 4) save DB
         $quiz->sauvegarderScore($_SESSION['user_id'], $score, $tempsTotal);
 
-        // Sauvegarde en session pour la page résultat
+        // 5) session pour resultat.php (avec détails)
         $_SESSION['dernier_score'] = $score;
         $_SESSION['dernier_theme'] = $theme;
-        $_SESSION['total_questions'] = count($quiz->getQuestions());
+        $_SESSION['total_questions'] = $resultat['total'];
+        $_SESSION['details_questions'] = $resultat['details']; // 💡 pour debug/affichage
+        $_SESSION['question_ids'] = $ids; // trace
 
         header('Location: resultat.php');
         exit;
     }
 
+    // GET : première arrivée -> tirer 5 questions
+    $quiz = new Quiz($theme);
+    $badgeSystem->verifierBadges($_SESSION['user_id']);
     $themeInfo = $quiz->getThemeInfo();
     $questions = $quiz->getQuestions();
 
+    // ➜ Figer l'ordre des questions affichées
+    $ids = array_map(fn($q) => $q->getId(), $questions);
+    $idsCsv = implode(',', $ids);
+
 } catch (Exception $e) {
-    die("Erreur : " . $e->getMessage());
+    die("Erreur : " . htmlspecialchars($e->getMessage()));
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -81,34 +86,36 @@ try {
 <body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen">
     <div class="container mx-auto px-4 py-8 max-w-4xl">
 
+        <!-- 🏁 En-tête -->
         <header class="text-center mb-8">
             <a href="index.php" class="inline-block text-purple-300 hover:text-white transition-colors mb-4">
                 ← Retour à l'accueil
             </a>
 
-            <div class="bg-gradient-to-r <?php echo $themeInfo['couleur']; ?> rounded-2xl p-6 text-white mb-8">
+            <div class="bg-gradient-to-r <?php echo $themeInfo['couleur']; ?> rounded-2xl p-6 text-white mb-8 shadow-xl">
                 <div class="text-4xl mb-2"><?php echo $themeInfo['emoji']; ?></div>
-                <h1 class="text-3xl font-bold mb-2">Quiz <?php echo htmlspecialchars($themeInfo['titre']); ?></h1>
-                <p class="text-white/80">Bonjour <?php echo htmlspecialchars($_SESSION['user_pseudo']); ?> ! Répondez aux 5 questions suivantes</p>
+                <h1 class="text-3xl font-bold mb-2">
+                    Quiz <?php echo htmlspecialchars($themeInfo['titre']); ?>
+                </h1>
+                <p class="text-white/80">
+                    Bonjour <?php echo htmlspecialchars($_SESSION['user_pseudo']); ?> !<br>
+                    Répondez aux 5 questions suivantes :
+                </p>
             </div>
         </header>
 
+        <!-- 🎯 Contenu principal -->
         <main>
             <form method="POST" class="space-y-8">
-                <!-- Champ caché pour enregistrer le temps -->
                 <input type="hidden" name="temps_total" id="temps_total" value="0">
-
+                <input type="hidden" name="question_ids" value="<?php echo htmlspecialchars($idsCsv); ?>">
                 <?php foreach ($questions as $index => $question): ?>
-                    <!-- 📚 CONCEPT POO : POLYMORPHISME EN ACTION -->
-                    <!-- Peu importe si c'est QuestionTexte, QuestionImage ou QuestionAudio -->
-                    <!-- On appelle afficherHTML() et chaque objet génère son propre HTML -->
-                    <!-- C'est la MAGIE du polymorphisme ! -->
                     <?php echo $question->afficherHTML($index); ?>
                 <?php endforeach; ?>
 
                 <div class="text-center">
                     <button type="submit"
-                            class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-2xl text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-200">
+                        class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-2xl text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-200">
                         🏆 Voir mes résultats !
                     </button>
                 </div>
@@ -116,12 +123,11 @@ try {
         </main>
     </div>
 
+    <!-- ⏱️ Script chronomètre -->
     <script>
-        // Chronomètre pour mesurer le temps de réponse
-        let tempsDebut = Date.now();
-
-        document.querySelector('form').addEventListener('submit', function() {
-            let tempsTotal = Math.round((Date.now() - tempsDebut) / 1000);
+        const debut = Date.now();
+        document.querySelector('form').addEventListener('submit', () => {
+            const tempsTotal = Math.round((Date.now() - debut) / 1000);
             document.getElementById('temps_total').value = tempsTotal;
         });
     </script>
