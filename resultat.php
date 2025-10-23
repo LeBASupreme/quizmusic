@@ -22,11 +22,10 @@ if (!isset($_SESSION['dernier_score'])) {
 }
 
 // 📚 Récupération des données de résultat
-$score = $_SESSION['dernier_score'];
-$total = $_SESSION['total_questions'];
-$theme = $_SESSION['dernier_theme'];
-$pseudo = $_SESSION['user_pseudo'];
-
+$score = $_SESSION['dernier_score'] ?? 0;
+$total = $_SESSION['total_questions'] ?? 0;
+$theme = $_SESSION['dernier_theme'] ?? 'inconnu';
+$details = $_SESSION['details_questions'] ?? [];
 // 📚 CONCEPT : Calcul du pourcentage
 $pourcentage = ($score / $total) * 100;
 
@@ -209,6 +208,10 @@ $themeInfo = $stmt->fetch();
             </div>
         </div>
     </div>
+
+
+
+    
 
     <script>
         // 📚 CONCEPT : Confettis pour les bonnes performances (score >= 7)

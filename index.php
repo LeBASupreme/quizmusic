@@ -103,6 +103,12 @@ function afficherDifficulte($niveau) {
             </div>
 
             <div class="flex gap-4">
+                 <div class="flex items-center gap-3">
+                    <a href="profile.php"
+                    class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-all duration-200 backdrop-blur-sm">
+                        👤 Mon profil
+                    </a>
+            </div>
                 <!-- Lien vers l'historique -->
                 <a href="historique.php"
                    class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-all duration-200 backdrop-blur-sm">
